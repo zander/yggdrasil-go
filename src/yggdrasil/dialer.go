@@ -33,7 +33,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	var nodeMask crypto.NodeID
 	// Process
 	switch network {
-	case "http":
+	case "tcp", "tcp6":
 		fallthrough
 	case "curve25519":
 		dest, err := hex.DecodeString(address)
