@@ -38,7 +38,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	case "curve25519":
 		dest, err := hex.DecodeString(address)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error decoding %q: %w", address, err)
 		}
 		if len(dest) != crypto.BoxPubKeyLen {
 			return nil, errors.New("invalid key length supplied")
