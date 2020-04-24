@@ -34,6 +34,8 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	// Process
 	switch network {
 	case "tcp", "tcp6":
+		tokens := strings.Split(address, ":")
+		address = tokens[0]
 		fallthrough
 	case "curve25519":
 		dest, err := hex.DecodeString(address)
