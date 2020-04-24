@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -73,7 +74,7 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 		return d.DialByNodeIDandMask(ctx, &nodeID, &nodeMask)
 	default:
 		// An unexpected address type was given, so give up
-		return nil, errors.New("unexpected address type")
+		return nil, fmt.Errorf("unexpected address type %q", network)
 	}
 }
 
