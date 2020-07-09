@@ -1,3 +1,5 @@
+// +build complete
+
 package session
 
 // This is the session manager

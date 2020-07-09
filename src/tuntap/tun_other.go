@@ -1,4 +1,5 @@
 // +build !linux,!darwin,!windows,!openbsd,!freebsd,!mobile
+// +build complete
 
 package tuntap
 

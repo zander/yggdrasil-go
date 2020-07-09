@@ -1,4 +1,4 @@
-// +build openbsd freebsd
+// +build complete
 
 package tuntap
 

@@ -151,23 +151,6 @@ func (a *AdminSocket) SetupAdminHandlers(na *AdminSocket) {
 		}
 		return Info{"dht": dht}, nil
 	})
-	a.AddHandler("getSessions", []string{}, func(in Info) (Info, error) {
-		sessions := make(Info)
-		for _, s := range a.core.GetSessions() {
-			addr := *address.AddrForNodeID(crypto.GetNodeID(&s.PublicKey))
-			so := net.IP(addr[:]).String()
-			sessions[so] = Info{
-				"coords":        fmt.Sprintf("%v", s.Coords),
-				"bytes_sent":    s.BytesSent,
-				"bytes_recvd":   s.BytesRecvd,
-				"mtu":           s.MTU,
-				"uptime":        s.Uptime.Seconds(),
-				"was_mtu_fixed": s.WasMTUFixed,
-				"box_pub_key":   hex.EncodeToString(s.PublicKey[:]),
-			}
-		}
-		return Info{"sessions": sessions}, nil
-	})
 	a.AddHandler("addPeer", []string{"uri", "[interface]"}, func(in Info) (Info, error) {
 		// Set sane defaults
 		intf := ""

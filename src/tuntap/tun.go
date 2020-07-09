@@ -1,3 +1,5 @@
+// +build complete
+
 package tuntap
 
 // This manages the tun driver to send/recv packets to/from applications

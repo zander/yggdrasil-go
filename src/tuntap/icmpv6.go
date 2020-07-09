@@ -1,3 +1,5 @@
+// +build complete
+
 package tuntap
 
 // The ICMPv6 module implements functions to easily create ICMPv6
