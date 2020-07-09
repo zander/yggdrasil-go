@@ -2,46 +2,35 @@ package yggdrasil
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"time"
 
 	"github.com/Arceliar/phony"
-	"github.com/yggdrasil-network/yggdrasil-go/src/crypto"
-	"github.com/yggdrasil-network/yggdrasil-go/src/types"
 )
-
-type packet struct {
-	addr    net.Addr
-	payload []byte
-}
 
 type PacketConn struct {
 	phony.Inbox
 	net.PacketConn
-	sessions      *sessions
+	core          *Core
 	closed        bool
 	readCallback  func(net.Addr, []byte)
-	readBuffer    chan packet
+	readBuffer    chan wire_trafficPacket
 	readDeadline  *time.Time
 	writeDeadline *time.Time
 }
 
-func newPacketConn(ss *sessions) *PacketConn {
+func newPacketConn(c *Core) *PacketConn {
 	return &PacketConn{
-		sessions:   ss,
-		readBuffer: make(chan packet),
+		core:       c,
+		readBuffer: make(chan wire_trafficPacket),
 	}
 }
 
-func (c *PacketConn) _sendToReader(addr net.Addr, payload []byte) {
+func (c *PacketConn) _sendToReader(addr net.Addr, packet wire_trafficPacket) {
 	if c.readCallback == nil {
-		c.readBuffer <- packet{
-			addr:    addr,
-			payload: payload,
-		}
+		c.readBuffer <- packet
 	} else {
-		c.readCallback(addr, payload)
+		c.readCallback(addr, packet.Payload)
 	}
 }
 
@@ -54,8 +43,9 @@ func (c *PacketConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		return 0, nil, PacketConnError{closed: true}
 	}
 	packet := <-c.readBuffer
-	copy(b, packet.payload)
-	return len(packet.payload), packet.addr, nil
+	coords := wire_coordsBytestoUint64s(packet.Coords)
+	copy(b, packet.Payload)
+	return len(packet.Payload), Coords(coords), nil
 }
 
 // implements net.PacketConn
@@ -66,103 +56,23 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 
 	// Make sure that the net.Addr we were given was actually a
 	// *crypto.BoxPubKey. If it wasn't then fail.
-	boxPubKey, ok := addr.(*crypto.BoxPubKey)
+	coords, ok := addr.(*Coords)
 	if !ok {
-		return 0, errors.New("expected *crypto.BoxPubKey as net.Addr")
+		return 0, errors.New("expected *yggdrasil.Coords as net.Addr")
 	}
 
-	// Work out the node ID for the public key we were given. If
-	// we need to perform a search then we will need to know this.
-	nodeID := crypto.GetNodeID(boxPubKey)
-	nodeMask := &crypto.NodeID{}
-	for i := range nodeMask {
-		nodeMask[i] = 0xFF
+	// Create the packet.
+	packet := &wire_trafficPacket{
+		Coords:  wire_coordsUint64stoBytes(*coords),
+		Payload: b,
 	}
 
-	// Look up if we have an open session for that destination.
-	var session *sessionInfo
-	phony.Block(c.sessions.router, func() {
-		session, ok = c.sessions.getByTheirPerm(boxPubKey)
-	})
-
-	// If we don't have an open session then we will need to perform
-	// a search to find the coordinates for the node. Doing this will
-	// implicitly open a session to the remote node.
-	if !ok {
-		// Try and look up the node ID and mask.
-		if nodeID, boxPubKey, err = c.sessions.router.core.Resolve(nodeID, nodeMask); err != nil {
-			return 0, fmt.Errorf("search failed: %w", err)
-		}
-
-		// The previous function will block until it is done and by
-		// that point we should have a session. Try to retrieve it.
-		phony.Block(c.sessions.router, func() {
-			session, ok = c.sessions.getByTheirPerm(boxPubKey)
-		})
-
-		// If we still don't have an open session then something's
-		// gone wrong. Give up at this point.
-		if !ok || session == nil {
-			return 0, errors.New("session is not open")
-		}
-	}
-
-	// Delegate to the sessions actor to actually send the message
-	// through the session. We'll wait on the sendErr channel for
-	// the actor to finish at least the initial checks.
-	sendErr := make(chan error, 1)
-	msg := FlowKeyMessage{Message: b}
-	session.Act(c, func() {
-		// Check if the packet is small enough to go through this session.
-		// If it isn't then we'll send back an error with the maximum
-		// session MTU. The sender can decide what to do with it.
-		sessionMTU := session._getMTU()
-		if types.MTU(len(b)) > sessionMTU {
-			sendErr <- PacketConnError{maxsize: int(sessionMTU)}
-			return
-		}
-
-		// If we got to this point then our initial checks passed - there
-		// isn't much point blocking the sender any further so release it.
-		sendErr <- nil
-
-		// Send the packet.
-		session._send(msg)
-
-		// Session keep-alive, while we wait for the crypto workers from send
-		switch {
-		case time.Since(session.time) > 6*time.Second:
-			if session.time.Before(session.pingTime) && time.Since(session.pingTime) > 6*time.Second {
-				// TODO double check that the above condition is correct
-				c.sessions.router.Act(session, func() {
-					// Check to see if there is a search already matching the
-					// supplied destination. If there is then don't start another
-					// one.
-					sinfo, isIn := c.sessions.router.searches.searches[*nodeID]
-					if !isIn {
-						// Nothing was found, so create a new search.
-						searchCompleted := func(sinfo *sessionInfo, e error) {}
-						sinfo = c.sessions.router.searches.newIterSearch(nodeID, nodeMask, searchCompleted)
-
-						// Start the search.
-						sinfo.startSearch()
-						c.sessions.router.core.log.Debugf("DHT search started: %p", sinfo)
-					}
-				})
-			} else {
-				session._sendPingPong(false)
-			}
-
-		case session.reset && session.pingTime.Before(session.time):
-			session._sendPingPong(false)
-
-		default:
-		}
-	})
+	// Send it to the router.
+	c.core.router.out(packet.encode())
 
 	// Wait for the checks to pass. Then return the success
 	// values to the caller.
-	err = <-sendErr
+	//err = <-sendErr
 	return len(b), err
 }
 
@@ -174,7 +84,7 @@ func (c *PacketConn) Close() error {
 
 // implements net.PacketConn
 func (c *PacketConn) LocalAddr() net.Addr {
-	return &c.sessions.router.core.boxPub
+	return &c.core.boxPub
 }
 
 // SetReadCallback allows you to specify a function that will be called whenever
@@ -196,7 +106,8 @@ func (c *PacketConn) _drainReadBuffer() {
 	}
 	select {
 	case bs := <-c.readBuffer:
-		c.readCallback(bs.addr, bs.payload)
+		coords := Coords(wire_coordsBytestoUint64s(bs.Coords))
+		c.readCallback(&coords, bs.Payload)
 		c.Act(nil, c._drainReadBuffer) // In case there's more
 	default:
 	}

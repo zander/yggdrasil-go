@@ -21,6 +21,7 @@ type Core struct {
 	// We're going to keep our own copy of the provided config - that way we can
 	// guarantee that it will be covered by the mutex
 	phony.Inbox
+	*PacketConn
 	config       config.NodeState // Config
 	boxPub       crypto.BoxPubKey
 	boxPriv      crypto.BoxPrivKey
@@ -179,6 +180,8 @@ func (c *Core) _start(nc *config.NodeConfig, log *log.Logger) (*config.NodeState
 		c.log.Errorln("Failed to start router")
 		return nil, err
 	}
+
+	c.PacketConn = newPacketConn(c)
 
 	c.Act(c, c._addPeerLoop)
 

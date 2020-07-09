@@ -9,7 +9,6 @@ package yggdrasil
 
 import (
 	"github.com/yggdrasil-network/yggdrasil-go/src/crypto"
-	"github.com/yggdrasil-network/yggdrasil-go/src/types"
 )
 
 const (
@@ -224,8 +223,8 @@ func wire_chop_uint64(toUInt64 *uint64, fromSlice *[]byte) bool {
 // The wire format for ordinary IPv6 traffic encapsulated by the network.
 type wire_trafficPacket struct {
 	Coords  []byte
-	Handle  crypto.Handle
-	Nonce   crypto.BoxNonce
+	Handle  crypto.Handle   // TODO: remove
+	Nonce   crypto.BoxNonce // TODO: remove
 	Payload []byte
 }
 
@@ -339,6 +338,7 @@ func (p *wire_linkProtoTrafficPacket) decode(bs []byte) bool {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Encodes a sessionPing into its wire format.
+/*
 func (p *sessionPing) encode() []byte {
 	var pTypeVal uint64
 	if p.IsPong {
@@ -386,6 +386,7 @@ func (p *sessionPing) decode(bs []byte) bool {
 	p.MTU = types.MTU(mtu)
 	return true
 }
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 

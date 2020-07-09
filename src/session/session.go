@@ -1,4 +1,4 @@
-package yggdrasil
+package session
 
 // This is the session manager
 // It's responsible for keeping track of open sessions to other nodes
@@ -6,6 +6,7 @@ package yggdrasil
 
 import (
 	"bytes"
+	"net"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/yggdrasil-network/yggdrasil-go/src/crypto"
 	"github.com/yggdrasil-network/yggdrasil-go/src/types"
 	"github.com/yggdrasil-network/yggdrasil-go/src/util"
+	"github.com/yggdrasil-network/yggdrasil-go/src/yggdrasil"
 
 	"github.com/Arceliar/phony"
 )
@@ -48,9 +50,7 @@ type sessionInfo struct {
 	bytesRecvd    uint64              // Bytes of real traffic received in this session
 	init          chan struct{}       // Closed when the first session pong arrives, used to signal that the session is ready for initial use
 	cancel        util.Cancellation   // Used to terminate workers
-	conn          *PacketConn         // The associated PacketConn object
 	callbacks     []chan func()       // Finished work from crypto workers
-	table         *lookupTable        // table.self is a locator where we get our coords
 }
 
 // Represents a session ping/pong packet, and includes information like public keys, a session handle, coords, a timestamp to prevent replays, and the tun/tap MTU.
@@ -106,36 +106,42 @@ func (s *sessionInfo) _update(p *sessionPing) bool {
 // Sessions are indexed by handle.
 // Additionally, stores maps of address/subnet onto keys, and keys onto handles.
 type sessions struct {
-	router           *router
-	packetConn       *PacketConn
-	lastCleanup      time.Time
+	phony.Inbox
+	net.PacketConn                                                       // We implement this interface
+	core             *yggdrasil.Core                                     //
+	lastCleanup      time.Time                                           //
 	isAllowedHandler func(pubkey *crypto.BoxPubKey, initiator bool) bool // Returns true or false if session setup is allowed
 	isAllowedMutex   sync.RWMutex                                        // Protects the above
 	myMaximumMTU     types.MTU                                           // Maximum allowed session MTU
+	ourPermPub       *crypto.BoxPubKey                                   // Our public encryption key
+	ourPermPriv      *crypto.BoxPrivKey                                  // Our private encryption key
 	permShared       map[crypto.BoxPubKey]*crypto.BoxSharedKey           // Maps known permanent keys to their shared key, used by DHT a lot
 	sinfos           map[crypto.Handle]*sessionInfo                      // Maps handle onto session info
 	byTheirPerm      map[crypto.BoxPubKey]*crypto.Handle                 // Maps theirPermPub onto handle
 }
 
 // Initializes the session struct.
-func (ss *sessions) init(r *router) {
-	ss.router = r
-	ss.packetConn = newPacketConn(ss)
+func (ss *sessions) init(core *yggdrasil.Core) {
+	ss.core = core
 	ss.permShared = make(map[crypto.BoxPubKey]*crypto.BoxSharedKey)
 	ss.sinfos = make(map[crypto.Handle]*sessionInfo)
 	ss.byTheirPerm = make(map[crypto.BoxPubKey]*crypto.Handle)
 	ss.lastCleanup = time.Now()
+	boxPubKey, boxPrivKey := ss.core.EncryptionPublicKey(), ss.core.EncryptionPrivateKey()
+	ss.ourPermPub, ss.ourPermPriv = &boxPubKey, &boxPrivKey
 	ss.myMaximumMTU = 65535
 }
 
 func (ss *sessions) reconfigure() {
-	ss.router.Act(nil, func() {
+	ss.Act(nil, func() {
 		for _, session := range ss.sinfos {
-			sinfo, mtu := session, ss.myMaximumMTU
-			sinfo.Act(ss.router, func() {
-				sinfo.myMTU = mtu
-			})
-			session.ping(ss.router)
+			/*
+				sinfo, mtu := session, ss.myMaximumMTU
+				sinfo.Act(ss.router, func() {
+					sinfo.myMTU = mtu
+				})
+			*/
+			session.ping(ss)
 		}
 	})
 }
@@ -180,7 +186,7 @@ func (ss *sessions) createSession(theirPermKey *crypto.BoxPubKey) *sessionInfo {
 	sinfo := sessionInfo{}
 	sinfo.sessions = ss
 	sinfo.theirPermPub = *theirPermKey
-	sinfo.sharedPermKey = *ss.getSharedKey(&ss.router.core.boxPriv, &sinfo.theirPermPub)
+	sinfo.sharedPermKey = *ss.getSharedKey(ss.ourPermPriv, &sinfo.theirPermPub)
 	pub, priv := crypto.NewBoxKeys()
 	sinfo.mySesPub = *pub
 	sinfo.mySesPriv = *priv
@@ -195,11 +201,11 @@ func (ss *sessions) createSession(theirPermKey *crypto.BoxPubKey) *sessionInfo {
 	sinfo.init = make(chan struct{})
 	sinfo.cancel = util.NewCancellation()
 	higher := false
-	for idx := range ss.router.core.boxPub {
-		if ss.router.core.boxPub[idx] > sinfo.theirPermPub[idx] {
+	for idx := range ss.ourPermPub {
+		if ss.ourPermPub[idx] > sinfo.theirPermPub[idx] {
 			higher = true
 			break
-		} else if ss.router.core.boxPub[idx] < sinfo.theirPermPub[idx] {
+		} else if ss.ourPermPub[idx] < sinfo.theirPermPub[idx] {
 			break
 		}
 	}
@@ -213,7 +219,7 @@ func (ss *sessions) createSession(theirPermKey *crypto.BoxPubKey) *sessionInfo {
 	sinfo.myHandle = *crypto.NewHandle()
 	sinfo.theirAddr = *address.AddrForNodeID(crypto.GetNodeID(&sinfo.theirPermPub))
 	sinfo.theirSubnet = *address.SubnetForNodeID(crypto.GetNodeID(&sinfo.theirPermPub))
-	sinfo.table = ss.router.table
+	//sinfo.table = ss.router.table
 	ss.sinfos[sinfo.myHandle] = &sinfo
 	ss.byTheirPerm[sinfo.theirPermPub] = &sinfo.myHandle
 	return &sinfo
@@ -248,7 +254,7 @@ func (ss *sessions) cleanup() {
 }
 
 func (sinfo *sessionInfo) doRemove() {
-	sinfo.sessions.router.Act(nil, func() {
+	sinfo.sessions.Act(nil, func() {
 		sinfo.sessions.removeSession(sinfo)
 	})
 }
@@ -263,9 +269,9 @@ func (ss *sessions) removeSession(sinfo *sessionInfo) {
 
 // Returns a session ping appropriate for the given session info.
 func (sinfo *sessionInfo) _getPing() sessionPing {
-	coords := sinfo.table.self.getCoords()
+	coords := sinfo.sessions.core.Coords()
 	ping := sessionPing{
-		SendPermPub: sinfo.sessions.router.core.boxPub,
+		SendPermPub: *sinfo.sessions.ourPermPub,
 		Handle:      sinfo.myHandle,
 		SendSesPub:  sinfo.mySesPub,
 		Tstamp:      time.Now().Unix(),

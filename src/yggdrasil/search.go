@@ -33,7 +33,7 @@ type searchInfo struct {
 	mask     crypto.NodeID
 	time     time.Time
 	visited  []*crypto.NodeID // Closest addresses visited so far
-	callback func(*sessionInfo, error)
+	callback func(Coords, error)
 	// TODO context.Context for timeout and cancellation
 	send uint64 // log number of requests sent
 	recv uint64 // log number of responses received
@@ -56,7 +56,7 @@ func (s *searches) reconfigure() {
 }
 
 // Creates a new search info, adds it to the searches struct, and returns a pointer to the info.
-func (s *searches) createSearch(dest *crypto.NodeID, mask *crypto.NodeID, callback func(*sessionInfo, error)) *searchInfo {
+func (s *searches) createSearch(dest *crypto.NodeID, mask *crypto.NodeID, callback func(Coords, error)) *searchInfo {
 	info := searchInfo{
 		searches: s,
 		dest:     *dest,
@@ -192,7 +192,7 @@ func (sinfo *searchInfo) startSearch() {
 }
 
 // Calls create search, and initializes the iterative search parts of the struct before returning it.
-func (s *searches) newIterSearch(dest *crypto.NodeID, mask *crypto.NodeID, callback func(*sessionInfo, error)) *searchInfo {
+func (s *searches) newIterSearch(dest *crypto.NodeID, mask *crypto.NodeID, callback func(Coords, error)) *searchInfo {
 	sinfo := s.createSearch(dest, mask, callback)
 	sinfo.visited = append(sinfo.visited, &s.router.dht.nodeID)
 	return sinfo
@@ -235,17 +235,19 @@ func (sinfo *searchInfo) checkDHTRes(res *dhtRes) bool {
 	if themMasked != destMasked {
 		return false
 	}
-	finishSearch := func(sess *sessionInfo, err error) {
-		if sess != nil {
-			// FIXME (!) replay attacks could mess with coords? Give it a handle (tstamp)?
-			sess.Act(sinfo.searches.router, func() { sess.coords = res.Coords })
-			sess.ping(sinfo.searches.router)
-		}
-		if err != nil {
-			sinfo.callback(nil, err)
-		} else {
-			sinfo.callback(sess, nil)
-		}
+	finishSearch := func(err error) {
+		/*
+			if sess != nil {
+				// FIXME (!) replay attacks could mess with coords? Give it a handle (tstamp)?
+				sess.Act(sinfo.searches.router, func() { sess.coords = res.Coords })
+				sess.ping(sinfo.searches.router)
+			}
+			if err != nil {
+				sinfo.callback(nil, err)
+			} else {
+				sinfo.callback(sess, nil)
+			}
+		*/
 		// Cleanup
 		if _, isIn := sinfo.searches.searches[sinfo.dest]; isIn {
 			sinfo.searches.router.core.log.Debugln("Finished search:", &sinfo.dest, sinfo.send, sinfo.recv)
@@ -253,19 +255,21 @@ func (sinfo *searchInfo) checkDHTRes(res *dhtRes) bool {
 		}
 	}
 	// They match, so create a session and send a sessionRequest
-	var err error
-	sess, isIn := sinfo.searches.router.sessions.getByTheirPerm(&res.Key)
-	if !isIn {
-		// Don't already have a session
-		sess = sinfo.searches.router.sessions.createSession(&res.Key)
-		if sess == nil {
-			err = errors.New("session not allowed")
-		} else if _, isIn := sinfo.searches.router.sessions.getByTheirPerm(&res.Key); !isIn {
-			panic("This should never happen")
+	/*
+		var err error
+		sess, isIn := sinfo.searches.router.sessions.getByTheirPerm(&res.Key)
+		if !isIn {
+			// Don't already have a session
+			sess = sinfo.searches.router.sessions.createSession(&res.Key)
+			if sess == nil {
+				err = errors.New("session not allowed")
+			} else if _, isIn := sinfo.searches.router.sessions.getByTheirPerm(&res.Key); !isIn {
+				panic("This should never happen")
+			}
+		} else {
+			err = errors.New("session already exists")
 		}
-	} else {
-		err = errors.New("session already exists")
-	}
-	finishSearch(sess, err)
+	*/
+	finishSearch(nil)
 	return true
 }

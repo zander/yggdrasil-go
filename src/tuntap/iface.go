@@ -1,6 +1,9 @@
 package tuntap
 
 import (
+	"fmt"
+	"net"
+
 	"github.com/yggdrasil-network/yggdrasil-go/src/address"
 	"github.com/yggdrasil-network/yggdrasil-go/src/crypto"
 
@@ -166,6 +169,9 @@ func (tun *TunAdapter) _handlePacket(recvd []byte, err error) {
 			return
 		}
 
+		fmt.Println("Don't know key for this address/subnet, starting search")
+		fmt.Println(net.IP(dstAddr[:]).String())
+
 		_, boxPubKey, err = tun.core.Resolve(dstNodeID, dstNodeMask)
 		if err != nil {
 			tun.log.Errorln("tun.core.Resolve:", err)
@@ -179,6 +185,8 @@ func (tun *TunAdapter) _handlePacket(recvd []byte, err error) {
 		tun.log.Errorln("No destination public key found for this packet")
 		return
 	}
+
+	fmt.Println("Sending to", *boxPubKey)
 
 	n, err = tun.packetConn.WriteTo(recvd, boxPubKey)
 	if err != nil {

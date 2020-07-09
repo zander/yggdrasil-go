@@ -16,6 +16,16 @@ import (
 	"github.com/Arceliar/phony"
 )
 
+type Coords []uint64
+
+func (c Coords) Network() string {
+	return "coords"
+}
+
+func (c Coords) String() string {
+	return fmt.Sprintf("%v", c)
+}
+
 // Peer represents a single peer object. This contains information from the
 // preferred switch port for this peer, although there may be more than one
 // active switch port connection to the peer in reality.
@@ -42,7 +52,7 @@ type Peer struct {
 // RemovePeer functions instead.
 type SwitchPeer struct {
 	PublicKey  crypto.BoxPubKey // The public key of the remote node
-	Coords     []uint64         // The coordinates of the remote node
+	Coords     Coords           // The coordinates of the remote node
 	BytesSent  uint64           // Number of bytes sent via this switch port
 	BytesRecvd uint64           // Number of bytes received via this switch port
 	Port       uint64           // Switch port number for this switch peer
@@ -54,7 +64,7 @@ type SwitchPeer struct {
 // DHT searches.
 type DHTEntry struct {
 	PublicKey crypto.BoxPubKey
-	Coords    []uint64
+	Coords    Coords
 	LastSeen  time.Duration
 }
 
@@ -201,6 +211,7 @@ func (c *Core) GetDHT() []DHTEntry {
 }
 
 // GetSessions returns a list of open sessions from this node to other nodes.
+/*
 func (c *Core) GetSessions() []Session {
 	var sessions []Session
 	getSessions := func() {
@@ -225,39 +236,21 @@ func (c *Core) GetSessions() []Session {
 	phony.Block(&c.router, getSessions)
 	return sessions
 }
-
-// PacketConn returns a net.PacketConn which can be used to send and receive
-// information over Yggdrasil sessions.
-func (c *Core) PacketConn() *PacketConn {
-	return c.router.sessions.packetConn
-}
+*/
 
 // Resolve takes a masked node ID and performs a search, returning the complete
 // node ID and the node's public key.
-func (c *Core) Resolve(nodeID, nodeMask *crypto.NodeID) (fullNodeID *crypto.NodeID, boxPubKey *crypto.BoxPubKey, err error) {
+func (c *Core) Resolve(nodeID, nodeMask *crypto.NodeID) (coords Coords, err error) {
 	c.log.Debugln("Resolving", nodeID.String())
 	defer c.log.Debugln("Finished resolving", nodeID.String())
 
 	done := make(chan struct{})
 	c.router.Act(c, func() {
 		if _, searching := c.router.searches.searches[*nodeID]; !searching {
-			searchCompleted := func(sinfo *sessionInfo, e error) {
-				select {
-				case <-done:
-					// Somehow this was called multiple times, TODO don't let that happen
-					if sinfo != nil {
-						// Need to clean up to avoid a session leak
-						sinfo.cancel.Cancel(nil)
-						sinfo.sessions.removeSession(sinfo)
-					}
-				default:
-					if sinfo != nil {
-						fullNodeID = crypto.GetNodeID(&sinfo.theirPermPub)
-						boxPubKey = &sinfo.theirPermPub
-					}
-					err = e
-					close(done)
-				}
+			searchCompleted := func(co Coords, e error) {
+				coords = co
+				err = e
+				close(done)
 			}
 			c.router.searches.newIterSearch(nodeID, nodeMask, searchCompleted).startSearch()
 		} else {
@@ -297,14 +290,33 @@ func (c *Core) TreeID() *crypto.TreeID {
 }
 
 // SigningPublicKey gets the node's signing public key, as used by the switch.
-func (c *Core) SigningPublicKey() string {
-	return hex.EncodeToString(c.sigPub[:])
+func (c *Core) SigningPublicKey() crypto.SigPubKey {
+	var sigPubKey crypto.SigPubKey
+	copy(sigPubKey[:], c.sigPub[:])
+	return sigPubKey
+}
+
+// SigningPrivateKey gets the node's signing private key, as used by the switch.
+func (c *Core) SigningPrivateKey() crypto.SigPrivKey {
+	var sigPrivKey crypto.SigPrivKey
+	copy(sigPrivKey[:], c.sigPriv[:])
+	return sigPrivKey
 }
 
 // EncryptionPublicKey gets the node's encryption public key, as used by the
 // router.
-func (c *Core) EncryptionPublicKey() string {
-	return hex.EncodeToString(c.boxPub[:])
+func (c *Core) EncryptionPublicKey() crypto.BoxPubKey {
+	var boxPubKey crypto.BoxPubKey
+	copy(boxPubKey[:], c.boxPub[:])
+	return boxPubKey
+}
+
+// EncryptionPrivateKey gets the node's encryption private key, as used by the
+// router.
+func (c *Core) EncryptionPrivateKey() crypto.BoxPrivKey {
+	var boxPrivKey crypto.BoxPrivKey
+	copy(boxPrivKey[:], c.boxPriv[:])
+	return boxPrivKey
 }
 
 // Coords returns the current coordinates of the node. Note that these can
@@ -359,6 +371,7 @@ func (c *Core) SetNodeInfo(nodeinfo interface{}, nodeinfoprivacy bool) {
 	c.router.nodeinfo.setNodeInfo(nodeinfo, nodeinfoprivacy)
 }
 
+/*
 // GetMaximumSessionMTU returns the maximum allowed session MTU size.
 func (c *Core) GetMaximumSessionMTU() types.MTU {
 	var mtu types.MTU
@@ -379,6 +392,7 @@ func (c *Core) SetMaximumSessionMTU(mtu types.MTU) {
 		}
 	})
 }
+*/
 
 // GetNodeInfo requests nodeinfo from a remote node, as specified by the public
 // key and coordinates specified. The third parameter specifies whether a cached
@@ -403,6 +417,7 @@ func (c *Core) GetNodeInfo(key crypto.BoxPubKey, coords []uint64, nocache bool) 
 	return NodeInfoPayload{}, fmt.Errorf("getNodeInfo timeout: %s", hex.EncodeToString(key[:]))
 }
 
+/*
 // SetSessionGatekeeper allows you to configure a handler function for deciding
 // whether a session should be allowed or not. The default session firewall is
 // implemented in this way. The function receives the public key of the remote
@@ -415,6 +430,7 @@ func (c *Core) SetSessionGatekeeper(f func(pubkey *crypto.BoxPubKey, initiator b
 
 	c.router.sessions.isAllowedHandler = f
 }
+*/
 
 // SetLogger sets the output logger of the Yggdrasil node after startup. This
 // may be useful if you want to redirect the output later. Note that this

@@ -216,7 +216,7 @@ func (t *dht) handleReq(req *dhtReq) {
 func (t *dht) sendRes(res *dhtRes, req *dhtReq) {
 	// Send a reply for a dhtReq
 	bs := res.encode()
-	shared := t.router.sessions.getSharedKey(&t.router.core.boxPriv, &req.Key)
+	shared := crypto.GetSharedKey(&t.router.core.boxPriv, &req.Key)
 	payload, nonce := crypto.BoxSeal(shared, bs, nil)
 	p := wire_protoTrafficPacket{
 		Coords:  req.Coords,
@@ -280,7 +280,7 @@ func (t *dht) handleRes(res *dhtRes) {
 func (t *dht) sendReq(req *dhtReq, dest *dhtInfo) {
 	// Send a dhtReq to the node in dhtInfo
 	bs := req.encode()
-	shared := t.router.sessions.getSharedKey(&t.router.core.boxPriv, &dest.key)
+	shared := crypto.GetSharedKey(&t.router.core.boxPriv, &dest.key)
 	payload, nonce := crypto.BoxSeal(shared, bs, nil)
 	p := wire_protoTrafficPacket{
 		Coords:  dest.coords,

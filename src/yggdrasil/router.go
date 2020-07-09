@@ -44,7 +44,6 @@ type router struct {
 	dht      dht
 	nodeinfo nodeinfo
 	searches searches
-	sessions sessions
 	intf     routerInterface
 	peer     *peer
 	table    *lookupTable // has a copy of our locator
@@ -70,7 +69,6 @@ func (r *router) init(core *Core) {
 	r.core.config.Mutex.RUnlock()
 	r.dht.init(r)
 	r.searches.init(r)
-	r.sessions.init(r)
 }
 
 func (r *router) updateTable(from phony.Actor, table *lookupTable) {
@@ -79,12 +77,6 @@ func (r *router) updateTable(from phony.Actor, table *lookupTable) {
 		r.nodeinfo.Act(r, func() {
 			r.nodeinfo.table = table
 		})
-		for _, ses := range r.sessions.sinfos {
-			sinfo := ses
-			sinfo.Act(r, func() {
-				sinfo.table = table
-			})
-		}
 	})
 }
 
@@ -102,7 +94,6 @@ func (r *router) reconfigure() {
 	// Reconfigure children
 	r.dht.reconfigure()
 	r.searches.reconfigure()
-	r.sessions.reconfigure()
 }
 
 // Starts the tickerLoop goroutine.
@@ -122,7 +113,6 @@ func (r *router) insertPeer(from phony.Actor, info *dhtInfo) {
 // Reset sessions and DHT after the switch sees our coords change
 func (r *router) reset(from phony.Actor) {
 	r.Act(from, func() {
-		r.sessions.reset()
 		r.dht.reset()
 	})
 }
@@ -134,7 +124,6 @@ func (r *router) doMaintenance() {
 		// Any periodic maintenance stuff goes here
 		r.core.switchTable.doMaintenance(r)
 		r.dht.doMaintenance()
-		r.sessions.cleanup()
 	})
 	time.AfterFunc(time.Second, r.doMaintenance)
 }
@@ -161,11 +150,7 @@ func (r *router) _handleTraffic(packet []byte) {
 	if !p.decode(packet) {
 		return
 	}
-	sinfo, isIn := r.sessions.getSessionForHandle(&p.Handle)
-	if !isIn {
-		return
-	}
-	sinfo.recv(r, &p)
+	r.core.PacketConn.core.readBuffer <- p
 }
 
 // Handles protocol traffic by decrypting it, checking its type, and passing it to the appropriate handler for that traffic type.
@@ -179,7 +164,7 @@ func (r *router) _handleProto(packet []byte) {
 	var sharedKey *crypto.BoxSharedKey
 	if p.ToKey == r.core.boxPub {
 		// Try to open using our permanent key
-		sharedKey = r.sessions.getSharedKey(&r.core.boxPriv, &p.FromKey)
+		sharedKey = crypto.GetSharedKey(&r.core.boxPriv, &p.FromKey)
 	} else {
 		return
 	}
@@ -195,10 +180,10 @@ func (r *router) _handleProto(packet []byte) {
 		return
 	}
 	switch bsType {
-	case wire_SessionPing:
-		r._handlePing(bs, &p.FromKey)
-	case wire_SessionPong:
-		r._handlePong(bs, &p.FromKey)
+	//case wire_SessionPing:
+	//	r._handlePing(bs, &p.FromKey)
+	//case wire_SessionPong:
+	//	r._handlePong(bs, &p.FromKey)
 	case wire_NodeInfoRequest:
 		fallthrough
 	case wire_NodeInfoResponse:
@@ -211,6 +196,7 @@ func (r *router) _handleProto(packet []byte) {
 	}
 }
 
+/*
 // Decodes session pings from wire format and passes them to sessions.handlePing where they either create or update a session.
 func (r *router) _handlePing(bs []byte, fromKey *crypto.BoxPubKey) {
 	ping := sessionPing{}
@@ -225,6 +211,7 @@ func (r *router) _handlePing(bs []byte, fromKey *crypto.BoxPubKey) {
 func (r *router) _handlePong(bs []byte, fromKey *crypto.BoxPubKey) {
 	r._handlePing(bs, fromKey)
 }
+*/
 
 // Decodes dht requests and passes them to dht.handleReq to trigger a lookup/response.
 func (r *router) _handleDHTReq(bs []byte, fromKey *crypto.BoxPubKey) {

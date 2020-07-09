@@ -37,24 +37,24 @@ const tun_IPv6_HEADER_LENGTH = 40
 // should pass this object to the yggdrasil.SetRouterAdapter() function before
 // calling yggdrasil.Start().
 type TunAdapter struct {
-	core              *yggdrasil.Core
-	writer            tunWriter
-	reader            tunReader
-	config            *config.NodeState
-	log               *log.Logger
-	reconfigure       chan chan error
-	packetConn        *yggdrasil.PacketConn
-	addr              address.Address
-	subnet            address.Subnet
-	addrToBoxPubKey   map[address.Address]*crypto.BoxPubKey
-	subnetToBoxPubKey map[address.Subnet]*crypto.BoxPubKey
-	ckr               cryptokey
-	icmpv6            ICMPv6
-	mtu               MTU
-	iface             tun.Device
-	phony.Inbox                           // Currently only used for _handlePacket from the reader, TODO: all the stuff that currently needs a mutex below
-	dials             map[string][][]byte // Buffer of packets to send after dialing finishes
-	isOpen            bool
+	core           *yggdrasil.Core
+	writer         tunWriter
+	reader         tunReader
+	config         *config.NodeState
+	log            *log.Logger
+	reconfigure    chan chan error
+	packetConn     *yggdrasil.PacketConn
+	addr           address.Address
+	subnet         address.Subnet
+	addrToCoords   map[address.Address]*yggdrasil.Coords
+	subnetToCoords map[address.Subnet]*yggdrasil.Coords
+	ckr            cryptokey
+	icmpv6         ICMPv6
+	mtu            MTU
+	iface          tun.Device
+	phony.Inbox                        // Currently only used for _handlePacket from the reader, TODO: all the stuff that currently needs a mutex below
+	dials          map[string][][]byte // Buffer of packets to send after dialing finishes
+	isOpen         bool
 }
 
 type TunOptions struct {
@@ -118,8 +118,8 @@ func (tun *TunAdapter) Init(core *yggdrasil.Core, config *config.NodeState, log 
 	tun.config = config
 	tun.log = log
 	tun.packetConn = tunoptions.PacketConn
-	tun.addrToBoxPubKey = make(map[address.Address]*crypto.BoxPubKey)
-	tun.subnetToBoxPubKey = make(map[address.Subnet]*crypto.BoxPubKey)
+	tun.addrToCoords = make(map[address.Address]*crypto.BoxPubKey)
+	tun.subnetToCoords = make(map[address.Subnet]*crypto.BoxPubKey)
 	tun.dials = make(map[string][][]byte)
 	tun.writer.tun = tun
 	tun.reader.tun = tun
@@ -164,7 +164,7 @@ func (tun *TunAdapter) _start() error {
 	if tun.MTU() != current.IfMTU {
 		tun.log.Warnf("Warning: Interface MTU %d automatically adjusted to %d (supported range is 1280-%d)", current.IfMTU, tun.MTU(), MaximumMTU())
 	}
-	tun.core.SetMaximumSessionMTU(tun.MTU())
+	//tun.core.SetMaximumSessionMTU(tun.MTU())
 	tun.isOpen = true
 	tun.reader.Act(nil, tun.reader._read) // Start the reader
 	tun.ckr.init(tun)

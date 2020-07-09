@@ -1,5 +1,6 @@
 package yggdrasil
 
+/*
 import (
 	"bytes"
 	"math/rand"
@@ -202,3 +203,4 @@ func BenchmarkCore_Start_Transfer(b *testing.B) {
 	}
 	<-done
 }
+*/
