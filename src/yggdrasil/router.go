@@ -25,6 +25,7 @@ package yggdrasil
 import (
 	//"bytes"
 
+	"fmt"
 	"time"
 
 	"github.com/yggdrasil-network/yggdrasil-go/src/address"
@@ -148,9 +149,12 @@ func (r *router) _handlePacket(packet []byte) {
 func (r *router) _handleTraffic(packet []byte) {
 	p := wire_trafficPacket{}
 	if !p.decode(packet) {
+		fmt.Println("Failed to decode packet")
 		return
 	}
+	fmt.Println("Received packet from", p.Coords, "- sending to PacketConn")
 	r.core.PacketConn.core.readBuffer <- p
+	fmt.Println("Sent to PacketConn buffer")
 }
 
 // Handles protocol traffic by decrypting it, checking its type, and passing it to the appropriate handler for that traffic type.

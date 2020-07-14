@@ -235,41 +235,13 @@ func (sinfo *searchInfo) checkDHTRes(res *dhtRes) bool {
 	if themMasked != destMasked {
 		return false
 	}
-	finishSearch := func(err error) {
-		/*
-			if sess != nil {
-				// FIXME (!) replay attacks could mess with coords? Give it a handle (tstamp)?
-				sess.Act(sinfo.searches.router, func() { sess.coords = res.Coords })
-				sess.ping(sinfo.searches.router)
-			}
-			if err != nil {
-				sinfo.callback(nil, err)
-			} else {
-				sinfo.callback(sess, nil)
-			}
-		*/
-		// Cleanup
-		if _, isIn := sinfo.searches.searches[sinfo.dest]; isIn {
-			sinfo.searches.router.core.log.Debugln("Finished search:", &sinfo.dest, sinfo.send, sinfo.recv)
-			delete(sinfo.searches.searches, res.Dest)
-		}
+	// Call back with results
+	coords := Coords(wire_coordsBytestoUint64s(res.Coords))
+	sinfo.callback(coords, nil)
+	// Cleanup
+	if _, isIn := sinfo.searches.searches[sinfo.dest]; isIn {
+		sinfo.searches.router.core.log.Debugln("Finished search:", &sinfo.dest, sinfo.send, sinfo.recv)
+		delete(sinfo.searches.searches, res.Dest)
 	}
-	// They match, so create a session and send a sessionRequest
-	/*
-		var err error
-		sess, isIn := sinfo.searches.router.sessions.getByTheirPerm(&res.Key)
-		if !isIn {
-			// Don't already have a session
-			sess = sinfo.searches.router.sessions.createSession(&res.Key)
-			if sess == nil {
-				err = errors.New("session not allowed")
-			} else if _, isIn := sinfo.searches.router.sessions.getByTheirPerm(&res.Key); !isIn {
-				panic("This should never happen")
-			}
-		} else {
-			err = errors.New("session already exists")
-		}
-	*/
-	finishSearch(nil)
 	return true
 }

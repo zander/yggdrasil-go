@@ -2,6 +2,7 @@ package yggdrasil
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
@@ -45,6 +46,7 @@ func (c *PacketConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	packet := <-c.readBuffer
 	coords := wire_coordsBytestoUint64s(packet.Coords)
 	copy(b, packet.Payload)
+	fmt.Println("Handling", len(packet.Payload), "bytes from", coords, c.core.Coords(), ":", b)
 	return len(packet.Payload), Coords(coords), nil
 }
 
@@ -67,8 +69,12 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 		Payload: b,
 	}
 
+	fmt.Println("Writing", len(b), "bytes:", b)
+
 	// Send it to the router.
 	c.core.router.out(packet.encode())
+
+	fmt.Println("Sent")
 
 	// Wait for the checks to pass. Then return the success
 	// values to the caller.
@@ -84,7 +90,7 @@ func (c *PacketConn) Close() error {
 
 // implements net.PacketConn
 func (c *PacketConn) LocalAddr() net.Addr {
-	return &c.core.boxPub
+	return c.core.Coords()
 }
 
 // SetReadCallback allows you to specify a function that will be called whenever

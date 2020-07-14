@@ -2,6 +2,7 @@ package yggdrasil
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -23,7 +24,8 @@ func (c Coords) Network() string {
 }
 
 func (c Coords) String() string {
-	return fmt.Sprintf("%v", c)
+	j, _ := json.Marshal(c)
+	return string(j)
 }
 
 // Peer represents a single peer object. This contains information from the
@@ -248,6 +250,10 @@ func (c *Core) Resolve(nodeID, nodeMask *crypto.NodeID) (coords Coords, err erro
 	c.router.Act(c, func() {
 		if _, searching := c.router.searches.searches[*nodeID]; !searching {
 			searchCompleted := func(co Coords, e error) {
+				fmt.Println("SEARCH FINISHED!")
+				fmt.Println("Coords:", co)
+				fmt.Println("Error:", err)
+
 				coords = co
 				err = e
 				close(done)
@@ -328,12 +334,12 @@ func (c *Core) EncryptionPrivateKey() crypto.BoxPrivKey {
 // you are the root of the network that you are connected to, or you are not
 // connected to any other nodes (effectively making you the root of a
 // single-node network).
-func (c *Core) Coords() []uint64 {
+func (c *Core) Coords() Coords {
 	var coords []byte
 	phony.Block(&c.router, func() {
 		coords = c.router.table.self.getCoords()
 	})
-	return wire_coordsBytestoUint64s(coords)
+	return Coords(wire_coordsBytestoUint64s(coords))
 }
 
 // Address gets the IPv6 address of the Yggdrasil node. This is always a /128
