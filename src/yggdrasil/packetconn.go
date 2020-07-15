@@ -2,7 +2,6 @@ package yggdrasil
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"time"
 
@@ -44,10 +43,8 @@ func (c *PacketConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		return 0, nil, PacketConnError{closed: true}
 	}
 	packet := <-c.readBuffer
-	coords := wire_coordsBytestoUint64s(packet.Coords)
 	copy(b, packet.Payload)
-	fmt.Println("Handling", len(packet.Payload), "bytes from", coords, c.core.Coords(), ":", b)
-	return len(packet.Payload), Coords(coords), nil
+	return len(packet.Payload), nil, nil
 }
 
 // implements net.PacketConn
@@ -58,23 +55,19 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 
 	// Make sure that the net.Addr we were given was actually a
 	// *crypto.BoxPubKey. If it wasn't then fail.
-	coords, ok := addr.(*Coords)
+	coords, ok := addr.(Coords)
 	if !ok {
-		return 0, errors.New("expected *yggdrasil.Coords as net.Addr")
+		return 0, errors.New("expected yggdrasil.Coords as net.Addr")
 	}
 
 	// Create the packet.
 	packet := &wire_trafficPacket{
-		Coords:  wire_coordsUint64stoBytes(*coords),
+		Coords:  wire_coordsUint64stoBytes(coords),
 		Payload: b,
 	}
 
-	fmt.Println("Writing", len(b), "bytes:", b)
-
 	// Send it to the router.
 	c.core.router.out(packet.encode())
-
-	fmt.Println("Sent")
 
 	// Wait for the checks to pass. Then return the success
 	// values to the caller.
