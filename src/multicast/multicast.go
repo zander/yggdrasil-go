@@ -341,9 +341,19 @@ func (m *Multicast) _announce() {
 }
 
 func (m *Multicast) listen() {
+	restart := func() {
+		if err := m.Stop(); err != nil {
+			m.log.Warnln("Failed to stop multicast:", err)
+		}
+		if err := m.Start(); err != nil {
+			m.log.Warnln("Failed to start multicast:", err)
+		}
+	}
 	groupAddr, err := net.ResolveUDPAddr("udp6", m.groupAddr)
 	if err != nil {
-		panic(err)
+		m.log.Warnln("Multicast error in ResolveUDPAddr (will restart):", err)
+		defer restart()
+		return
 	}
 	bs := make([]byte, 2048)
 	for {
@@ -352,7 +362,9 @@ func (m *Multicast) listen() {
 			if !m.IsStarted() {
 				return
 			}
-			panic(err)
+			m.log.Warnln("Multicast error in ReadFrom (will restart):", err)
+			defer restart()
+			return
 		}
 		if rcm != nil {
 			// Windows can't set the flag needed to return a non-nil value here
