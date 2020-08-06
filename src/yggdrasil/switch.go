@@ -12,6 +12,7 @@ package yggdrasil
 //  A little annoying to do with constant changes from backpressure
 
 import (
+	"bytes"
 	"sync"
 	"time"
 
@@ -536,9 +537,11 @@ func (t *switchTable) _handleMsg(msg *switchMsg, fromPort switchPort, reprocessi
 		if t.data.locator.tstamp != sender.locator.tstamp {
 			t.time = now
 		}
-		t.coordChangeMutex.RLock()
-		t.coordChangeFunc(t.data.locator.getRawCoords(), sender.locator.getRawCoords())
-		t.coordChangeMutex.RUnlock()
+		if !bytes.Equal(t.data.locator.getCoords(), sender.locator.getCoords()) {
+			t.coordChangeMutex.RLock()
+			t.coordChangeFunc(t.data.locator.getRawCoords(), sender.locator.getRawCoords())
+			t.coordChangeMutex.RUnlock()
+		}
 		t.data.locator = sender.locator
 		t.parent = sender.port
 		defer t.core.peers.sendSwitchMsgs(t)
