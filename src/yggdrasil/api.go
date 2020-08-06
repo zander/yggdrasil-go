@@ -522,6 +522,14 @@ func (c *Core) GetAllowedEncryptionPublicKeys() []string {
 	return c.peers.getAllowedEncryptionPublicKeys()
 }
 
+// SetCoordChangeCallback sets a callback function which is called BEFORE the
+// node changes coordinates.
+func (c *Core) SetCoordChangeCallback(f func(old, new Coords)) {
+	c.switchTable.coordChangeMutex.Lock()
+	defer c.switchTable.coordChangeMutex.Unlock()
+	c.switchTable.coordChangeFunc = f
+}
+
 // AddAllowedEncryptionPublicKey whitelists a key for incoming peer connections.
 // By default all incoming peer connections are accepted, but adding public keys
 // to the whitelist using this function enables strict checking from that point

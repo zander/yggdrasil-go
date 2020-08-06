@@ -12,6 +12,7 @@ package yggdrasil
 //  A little annoying to do with constant changes from backpressure
 
 import (
+	"sync"
 	"time"
 
 	"github.com/yggdrasil-network/yggdrasil-go/src/crypto"
@@ -117,6 +118,15 @@ func (l *switchLocator) getCoords() []byte {
 	return bs
 }
 
+// Gets coords in wire encoded format, with *no* length prefix.
+func (l *switchLocator) getRawCoords() Coords {
+	bs := make(Coords, 0, len(l.coords))
+	for _, coord := range l.coords {
+		bs = append(bs, uint64(coord))
+	}
+	return bs
+}
+
 // Returns true if this locator represents an ancestor of the locator given as an argument.
 // Ancestor means that it's the parent node, or the parent of parent, and so on...
 func (x *switchLocator) isAncestorOf(y *switchLocator) bool {
@@ -177,13 +187,15 @@ type switchData struct {
 
 // All the information stored by the switch.
 type switchTable struct {
-	core        *Core
-	key         crypto.SigPubKey           // Our own key
-	phony.Inbox                            // Owns the below
-	time        time.Time                  // Time when locator.tstamp was last updated
-	drop        map[crypto.SigPubKey]int64 // Tstamp associated with a dropped root
-	parent      switchPort                 // Port of whatever peer is our parent, or self if we're root
-	data        switchData                 //
+	core             *Core
+	key              crypto.SigPubKey           // Our own key
+	phony.Inbox                                 // Owns the below
+	time             time.Time                  // Time when locator.tstamp was last updated
+	drop             map[crypto.SigPubKey]int64 // Tstamp associated with a dropped root
+	parent           switchPort                 // Port of whatever peer is our parent, or self if we're root
+	data             switchData                 //
+	coordChangeFunc  func(old, new Coords)      // call this before coords change
+	coordChangeMutex sync.RWMutex               // protects coordChangeFunc
 }
 
 // Minimum allowed total size of switch queues.
@@ -524,6 +536,9 @@ func (t *switchTable) _handleMsg(msg *switchMsg, fromPort switchPort, reprocessi
 		if t.data.locator.tstamp != sender.locator.tstamp {
 			t.time = now
 		}
+		t.coordChangeMutex.RLock()
+		t.coordChangeFunc(t.data.locator.getRawCoords(), sender.locator.getRawCoords())
+		t.coordChangeMutex.RUnlock()
 		t.data.locator = sender.locator
 		t.parent = sender.port
 		defer t.core.peers.sendSwitchMsgs(t)
