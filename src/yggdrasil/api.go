@@ -53,13 +53,14 @@ type Peer struct {
 // connections using instances of this struct. You should use the AddPeer or
 // RemovePeer functions instead.
 type SwitchPeer struct {
-	PublicKey  crypto.BoxPubKey // The public key of the remote node
-	Coords     Coords           // The coordinates of the remote node
-	BytesSent  uint64           // Number of bytes sent via this switch port
-	BytesRecvd uint64           // Number of bytes received via this switch port
-	Port       uint64           // Switch port number for this switch peer
-	Protocol   string           // The transport protocol that this switch port is connected with, typically "tcp"
-	Endpoint   string           // The connection string used to connect to the switch peer
+	PublicKey    crypto.BoxPubKey // The public key of the remote node
+	SigPublicKey crypto.SigPubKey // The public signing key of the remote node
+	Coords       Coords           // The coordinates of the remote node
+	BytesSent    uint64           // Number of bytes sent via this switch port
+	BytesRecvd   uint64           // Number of bytes received via this switch port
+	Port         uint64           // Switch port number for this switch peer
+	Protocol     string           // The transport protocol that this switch port is connected with, typically "tcp"
+	Endpoint     string           // The connection string used to connect to the switch peer
 }
 
 // DHTEntry represents a single DHT entry that has been learned or cached from
@@ -179,6 +180,7 @@ func (c *Core) GetSwitchPeers() []SwitchPeer {
 				Protocol:   peer.intf.interfaceType(),
 				Endpoint:   peer.intf.remote(),
 			}
+			copy(info.SigPublicKey[:], peer.sig[:])
 			copy(info.PublicKey[:], peer.box[:])
 		})
 		switchpeers = append(switchpeers, info)
